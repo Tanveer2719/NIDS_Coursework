@@ -53,7 +53,7 @@ class FlowTransformer:
 
         self.experiment_key = {}
 
-    def build_model(self, prefix:str=None):
+    def build_model(self, prefix:str=None, training=None):
         if prefix is None:
             prefix = ""
 
@@ -83,7 +83,7 @@ class FlowTransformer:
         # in case the classification head needs to add tokens at this stage
         m_x = self.classification_head.apply_before_transformer(m_x, prefix)
 
-        m_x = self.sequential_model.apply(m_x, prefix)
+        m_x = self.sequential_model.apply(m_x, prefix,training=training)
         m_x = self.classification_head.apply(m_x, prefix)
 
         for layer_i, layer_size in enumerate(self.parameters.mlp_layer_sizes):

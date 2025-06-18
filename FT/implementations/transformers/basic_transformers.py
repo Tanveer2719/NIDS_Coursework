@@ -37,7 +37,7 @@ class BasicTransformer(BaseSequential):
         self.dropout_rate = dropout_rate
         self.is_decoder = is_decoder
 
-    def apply(self, X, prefix: str = None):
+    def apply(self, X, prefix: str = None, training=False):
         #window_size = self.sequence_length
         real_size = X.shape[-1]
 
@@ -47,8 +47,8 @@ class BasicTransformer(BaseSequential):
             if self.is_decoder:
                 if self.use_conv:
                     raise NotImplementedError()
-                m_x = TransformerDecoderBlock(real_size, self.internal_size, self.n_heads, dropout_rate=self.dropout_rate)(m_x)
+                m_x = TransformerDecoderBlock(real_size, self.internal_size, self.n_heads, dropout_rate=self.dropout_rate)(m_x, training=training)
             else:
-                m_x = TransformerEncoderBlock(real_size, self.internal_size, self.n_heads, dropout_rate=self.dropout_rate, use_conv=self.use_conv, prefix=f"{prefix}block_{layer_i}_")(m_x)
+                m_x = TransformerEncoderBlock(real_size, self.internal_size, self.n_heads, dropout_rate=self.dropout_rate, use_conv=self.use_conv, prefix=f"{prefix}block_{layer_i}_")(m_x, training=training)
 
         return m_x
