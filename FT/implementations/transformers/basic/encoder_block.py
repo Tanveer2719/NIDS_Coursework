@@ -95,7 +95,7 @@ class TransformerEncoderBlock(layers.Layer):
         self.feed_forward_layer_norm = layers.LayerNormalization(epsilon=layer_norm, name=f"{prefix}feed_forward_layer_norm")
 
     # noinspection PyMethodOverriding
-    def call(self, inputs, training, mask=None):
+    def call(self, inputs, training = None, mask=None):
         x = inputs
         x = self.attention(x, x) if self.attn_implementation == MultiHeadAttentionImplementation.Keras else self.attention(x, x, x, mask)
 

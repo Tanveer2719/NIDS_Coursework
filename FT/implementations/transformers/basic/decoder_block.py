@@ -28,7 +28,7 @@ class TransformerDecoderBlock(Layer):
         self.layernorm2 = LayerNormalization(epsilon=1e-6)
 
     # noinspection PyMethodOverriding
-    def call(self, inputs, training, mask=None):
+    def call(self, inputs, training=None, mask=None):
         # inputs = (target_seq, enc_output)
         target_seq = inputs
         enc_output = inputs
