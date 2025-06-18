@@ -53,7 +53,7 @@ class FlowTransformer:
 
         self.experiment_key = {}
 
-    def build_model(self, prefix:str=None, training=None):
+    def build_model(self, prefix:str=None, training=False):
         if prefix is None:
             prefix = ""
 
