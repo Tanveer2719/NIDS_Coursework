@@ -112,4 +112,36 @@ class Preprocess:
 
         return df_transformed
     
+    def fit_transform_df_auto(self, df: pd.DataFrame, n_categorical_levels: int, expected_categorical_format: str = "integer") -> pd.DataFrame:
+        """
+        Automatically detects and preprocesses numerical and categorical columns.
+
+        Parameters:
+            df (pd.DataFrame): Input DataFrame (with features only, not target).
+            n_categorical_levels (int): Number of top categories to retain per categorical column.
+            expected_categorical_format (str): 'integer' or 'onehot'
+
+        Returns:
+            pd.DataFrame: Fully preprocessed DataFrame.
+        """
+        # Automatically detect column types
+        numerical_columns = df.select_dtypes(include=[np.number]).columns.tolist()
+        categorical_columns = df.select_dtypes(include=["object", "category"]).columns.tolist()
+
+        df_processed = df.copy()
+
+        if numerical_columns:
+            df_processed = self.fit_transform_numerical_df(df_processed, numerical_columns)
+
+        if categorical_columns:
+            df_processed = self.fit_transform_categoricals_df(
+                df_processed,
+                categorical_columns=categorical_columns,
+                n_categorical_levels=n_categorical_levels,
+                expected_categorical_format=expected_categorical_format
+            )
+
+        return df_processed
+
+    
 
