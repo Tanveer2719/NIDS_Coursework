@@ -1,5 +1,7 @@
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import LabelEncoder
+
 
 class Preprocess:
     def __init__(self, clip_numerical_values:bool=False):
@@ -144,6 +146,11 @@ class Preprocess:
             )
 
         return df_processed
+
+    def fit_target(column_name: str, values: np.array) -> pd.DataFrame:
+        le = LabelEncoder()
+        y_encoded = le.fit_transform(values)
+        return pd.DataFrame({column_name: y_encoded})
 
     
 
