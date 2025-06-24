@@ -147,7 +147,7 @@ class Preprocess:
 
         return df_processed
 
-    def fit_target(column_name: str, values: np.array) -> pd.DataFrame:
+    def fit_target(self, column_name: str, values: np.array) -> pd.DataFrame:
         le = LabelEncoder()
         y_encoded = le.fit_transform(values)
         return pd.DataFrame({column_name: y_encoded})
