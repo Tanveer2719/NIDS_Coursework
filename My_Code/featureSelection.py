@@ -37,17 +37,33 @@ class SimpleBinaryPSO:
 
     def optimize(self, fitness_func, verbose=False):
         for it in range(self.max_iter):
+            if verbose:
+                print(f"\n=== Iteration {it + 1}/{self.max_iter} ===")
             for i in range(self.n_particles):
                 score = fitness_func(self.X[i])
+                if verbose:
+                    print(f"Particle {i + 1}/{self.n_particles}: Score = {score:.4f}", end='')
+
                 if score > self.pbest_scores[i]:
+                    if verbose:
+                        print(f"  --> New personal best! Previous: {self.pbest_scores[i]:.4f}")
                     self.pbest_scores[i] = score
                     self.pbest[i] = self.X[i].copy()
+                else:
+                    if verbose:
+                        print()
+
                 if score > self.gbest_score:
+                    if verbose:
+                        print(f"*** New global best score found: {score:.4f} (Particle {i + 1}) ***")
                     self.gbest_score = score
                     self.gbest = self.X[i].copy()
+
             self.update_particles()
+
             if verbose:
-                print(f"[Iteration {it + 1}] Best Score: {self.gbest_score:.4f}")
+                print(f"After iteration {it + 1}, global best score: {self.gbest_score:.4f}")
+
         return self.gbest
 
 class PSOFeatureSelector:
@@ -60,14 +76,14 @@ class PSOFeatureSelector:
         X_selected = X[:, feature_mask.astype(bool)]
         scorer = make_scorer(f1_score, average='macro')
         try:
-            scores = cross_val_score(self.classifier, X_selected, y, cv=5, scoring=scorer, n_jobs=-1)
+            scores = cross_val_score(self.classifier, X_selected, y, cv=3, scoring=scorer, n_jobs=1)
             return scores.mean()
         except Exception as e:
             if verbose:
                 print(f"Exception in fitness function: {e}")
             return 0
 
-    def run_pso(self, df, target_column, n_particles=30, iters=50, verbose=False):
+    def run_pso(self, df, target_column, n_particles=20, iters=10, verbose=False):
         X_df = df.drop(columns=[target_column])
         y = df[target_column]
         X = X_df.values
