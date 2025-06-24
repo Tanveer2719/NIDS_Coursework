@@ -1,72 +1,84 @@
-from sklearn.model_selection import cross_val_score
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import make_scorer, f1_score
-import pyswarms as ps
 import numpy as np
 import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import cross_val_score
+from sklearn.metrics import make_scorer, f1_score
+
+class SimpleBinaryPSO:
+    def __init__(self, n_particles, dimensions, max_iter, c1=1.5, c2=1.5, w=0.7):
+        self.n_particles = n_particles
+        self.dimensions = dimensions
+        self.max_iter = max_iter
+        self.c1 = c1
+        self.c2 = c2
+        self.w = w
+
+        # Initialization
+        self.X = np.random.randint(0, 2, size=(n_particles, dimensions))  # Binary positions
+        self.V = np.random.uniform(low=-1, high=1, size=(n_particles, dimensions))  # Velocities
+        self.pbest = self.X.copy()
+        self.pbest_scores = np.full(n_particles, -np.inf)
+        self.gbest = None
+        self.gbest_score = -np.inf
+
+    def sigmoid(self, x):
+        return 1 / (1 + np.exp(-x))
+
+    def update_particles(self):
+        r1 = np.random.rand(self.n_particles, self.dimensions)
+        r2 = np.random.rand(self.n_particles, self.dimensions)
+
+        cognitive = self.c1 * r1 * (self.pbest - self.X)
+        social = self.c2 * r2 * (self.gbest - self.X)
+        self.V = self.w * self.V + cognitive + social
+
+        prob = self.sigmoid(self.V)
+        self.X = (np.random.rand(self.n_particles, self.dimensions) < prob).astype(int)
+
+    def optimize(self, fitness_func, verbose=False):
+        for it in range(self.max_iter):
+            for i in range(self.n_particles):
+                score = fitness_func(self.X[i])
+                if score > self.pbest_scores[i]:
+                    self.pbest_scores[i] = score
+                    self.pbest[i] = self.X[i].copy()
+                if score > self.gbest_score:
+                    self.gbest_score = score
+                    self.gbest = self.X[i].copy()
+            self.update_particles()
+            if verbose:
+                print(f"[Iteration {it + 1}] Best Score: {self.gbest_score:.4f}")
+        return self.gbest
 
 class PSOFeatureSelector:
     def __init__(self, classifier=None):
         self.classifier = classifier or RandomForestClassifier(random_state=42)
 
-    def __fitness_function(self, feature_mask: np.ndarray, X: np.ndarray, y: np.ndarray, verbose: bool=False, idx: int=None) -> float:
+    def fitness_function(self, feature_mask, X, y, verbose=False):
         if np.sum(feature_mask) == 0:
-            if verbose:
-                print(f"[Particle {idx}] No features selected. Score: 0")
             return 0
-
         X_selected = X[:, feature_mask.astype(bool)]
         scorer = make_scorer(f1_score, average='macro')
-
         try:
-            scores = cross_val_score(self.classifier, X_selected, y, cv=5, scoring=scorer)
-            mean_score = scores.mean()
+            scores = cross_val_score(self.classifier, X_selected, y, cv=5, scoring=scorer, n_jobs=-1)
+            return scores.mean()
         except Exception as e:
             if verbose:
-                print(f"[Particle {idx}] Exception: {e}")
+                print(f"Exception in fitness function: {e}")
             return 0
 
-        if verbose:
-            print(f"[Particle {idx}] Features: {np.sum(feature_mask)} | Score: {mean_score:.4f}")
-        return mean_score
-
-    def __pso_feature_selection(self, X: np.ndarray, y: np.ndarray, n_particles: int=30, iters: int=50, verbose: bool=False):
-        dim = X.shape[1]
-
-        optimizer = ps.single.BinaryPSO(
-            n_particles=n_particles,
-            dimensions=dim,
-            options={'c1': 1.5, 'c2': 1.5, 'w': 0.7}
-        )
-
-        def objective_func(particles):
-            scores = []
-            for i, particle in enumerate(particles):
-                score = self.__fitness_function(particle, X, y, verbose=verbose, idx=i)
-                scores.append(-score)  # Minimize negative score
-            return np.array(scores)
-
-        best_cost, best_pos = optimizer.optimize(objective_func, iters=iters, verbose=verbose)
-        return best_pos.astype(bool)
-
-    def run_pso(self, df: pd.DataFrame, target_column: str, n_particles: int=30, iters: int=50, verbose: bool=False):
-        """
-        df: DataFrame containing both features and target.
-        target_column: Name of the target column.
-        """
+    def run_pso(self, df, target_column, n_particles=30, iters=50, verbose=False):
         X_df = df.drop(columns=[target_column])
         y = df[target_column]
-
         X = X_df.values
 
-        if verbose:
-            print(f"\nRunning PSO on {X.shape[1]} features and {len(np.unique(y))} target classes.\n")
+        def wrapped_fitness(mask):
+            return self.fitness_function(mask, X, y, verbose)
 
-        selected_mask = self.__pso_feature_selection(X, y, n_particles=n_particles, iters=iters, verbose=verbose)
-        selected_features = X_df.columns[selected_mask]
+        pso = SimpleBinaryPSO(n_particles=n_particles, dimensions=X.shape[1], max_iter=iters)
+        best_mask = pso.optimize(wrapped_fitness, verbose=verbose).astype(bool)
+        selected_features = X_df.columns[best_mask]
 
-        print(f"\n Selected {selected_mask.sum()} features out of {len(selected_mask)}")
-        print("Selected features:")
-        print(selected_features.tolist())
-
-        return selected_mask, selected_features
+        print(f"\n✅ Selected {best_mask.sum()} features out of {len(best_mask)}")
+        print("Selected features:", selected_features.tolist())
+        return best_mask, selected_features
