@@ -2,9 +2,11 @@ import numpy as np
 import pandas as pd
 
 class Preprocess:
-    def __init__(self):
+    def __init__(self, clip_numerical_values:bool=False):
         self.min_range = {}
         self.encoded_levels = {}
+        self.clip_numerical_values:bool = clip_numerical_values
+
 
     def __fit_numerical(self, column_name: str, values: np.array):
 
@@ -48,8 +50,8 @@ class Preprocess:
         df_transformed = df.copy()
 
         for col in numerical_columns:
-            self.fit_numerical(col, df[col])
-            df_transformed[col] = self.transform_numerical(col, df[col])
+            self.__fit_numerical(col, df[col])
+            df_transformed[col] = self.__transform_numerical(col, df[col])
 
         return df_transformed
     
@@ -95,10 +97,10 @@ class Preprocess:
 
         for col in categorical_columns:
             # Fit top-N categories for the column
-            self.fit_categorical(col, n_categorical_levels, df_transformed[col].values)
+            self.__fit_categorical(col, n_categorical_levels, df_transformed[col].values)
             
             # Transform the column
-            transformed = self.transform_categorical(col, df_transformed[col].values, expected_categorical_format)
+            transformed = self.__transform_categorical(col, df_transformed[col].values, expected_categorical_format)
             
             # Drop the original column
             df_transformed.drop(columns=[col], inplace=True)
