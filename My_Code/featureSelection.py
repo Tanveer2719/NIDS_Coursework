@@ -42,7 +42,7 @@ class PSOFeatureSelector:
         def objective_func(particles):
             scores = []
             for i, particle in enumerate(particles):
-                score = self.fitness_function(particle, X, y, verbose=verbose, idx=i)
+                score = self.__fitness_function(particle, X, y, verbose=verbose, idx=i)
                 scores.append(-score)  # Minimize negative score
             return np.array(scores)
 
@@ -62,7 +62,7 @@ class PSOFeatureSelector:
         if verbose:
             print(f"\nRunning PSO on {X.shape[1]} features and {len(np.unique(y))} target classes.\n")
 
-        selected_mask = self.pso_feature_selection(X, y, n_particles=n_particles, iters=iters, verbose=verbose)
+        selected_mask = self.__pso_feature_selection(X, y, n_particles=n_particles, iters=iters, verbose=verbose)
         selected_features = X_df.columns[selected_mask]
 
         print(f"\n Selected {selected_mask.sum()} features out of {len(selected_mask)}")
