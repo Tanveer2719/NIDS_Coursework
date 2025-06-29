@@ -43,8 +43,10 @@ class RecordLevelEmbed:
         Returns:
             Tensor: Embedded output tensor.
         """
+        print(f"[INFO] Concatenating {len(inputs)} inputs and applying Dense projection to dimension {self.embed_dimension}.")
         x = Concatenate(axis=-1)(inputs)
         x = Dense(self.embed_dimension, activation="linear")(x)
+        print(f"[INFO] Projection complete. Output embedding shape: ({self.embed_dimension},)")
         return x
 
 
@@ -63,16 +65,19 @@ def detect_categorical_blocks(column_names, numerical_columns):
     """
     blocks = defaultdict(list)
 
+    print("[INFO] Detecting categorical blocks...")
     for col in column_names:
         if col in numerical_columns:
-            # Skip numerical columns
             continue
         if "_" in col:
             block_name = col.rsplit("_", 1)[0]
         else:
-            # Single column block
             block_name = col
         blocks[block_name].append(col)
+
+    print(f"[INFO] Detected {len(blocks)} categorical blocks:")
+    for block, cols in blocks.items():
+        print(f"   - {block}: {len(cols)} columns")
 
     return dict(blocks)
 
@@ -100,6 +105,7 @@ class RecordLevelEmbedder:
             numerical_columns (list[str]): List of numerical columns.
             embed_dimension (int): Dimension of output embedding vector.
         """
+        print("[INFO] Initializing RecordLevelEmbedder...")
         self.df = selected_df
         self.numerical_columns = numerical_columns
         self.embed_dimension = embed_dimension
@@ -108,29 +114,33 @@ class RecordLevelEmbedder:
             numerical_columns=self.numerical_columns
         )
         self.model = None
+        print(f"[INFO] Embedder initialized with embedding dimension {self.embed_dimension}.")
 
     def build_model(self):
         """
         Build the Keras model to perform record-level embedding.
         """
+        print("[INFO] Building Keras embedding model...")
         inputs = []
 
-        # Numerical inputs: one Input per column
+        # Numerical inputs
         for col in self.numerical_columns:
+            print(f"   - Adding numerical input: {col}")
             inp = Input(shape=(1,), name=col)
             inputs.append(inp)
 
-        # Categorical blocks: one Input per block with shape = number of columns in block
+        # Categorical blocks
         for block_name, block_cols in self.categorical_blocks.items():
+            print(f"   - Adding categorical block input: {block_name} ({len(block_cols)} columns)")
             inp = Input(shape=(len(block_cols),), name=block_name)
             inputs.append(inp)
 
-        # Create embedding layer and apply
+        # Apply embedding
         embedder = RecordLevelEmbed(embed_dimension=self.embed_dimension)
         embedded = embedder.apply(inputs)
 
-        # Model outputs the embedded vector
         self.model = Model(inputs=inputs, outputs=embedded)
+        print("[INFO] Model build complete.")
 
     def transform(self, df: pd.DataFrame = None) -> np.ndarray:
         """
@@ -149,17 +159,22 @@ class RecordLevelEmbedder:
         if self.model is None:
             self.build_model()
 
+        print(f"[INFO] Preparing inputs for embedding. Number of rows: {len(df)}")
         X_inputs = {}
 
         # Numerical inputs
         for col in self.numerical_columns:
             X_inputs[col] = df[col].values.reshape(-1, 1)
+            print(f"   - Prepared numerical input: {col}")
 
-        # Categorical inputs grouped by blocks
+        # Categorical inputs
         for block_name, block_cols in self.categorical_blocks.items():
             X_inputs[block_name] = df[block_cols].values
+            print(f"   - Prepared categorical block input: {block_name}")
 
-        embeddings = self.model.predict(X_inputs, verbose=0)
+        print("[INFO] Performing embedding inference...")
+        embeddings = self.model.predict(X_inputs, verbose=1)
+        print(f"[INFO] Embedding complete. Output shape: {embeddings.shape}")
         return embeddings
 
     def transform_to_df(self, df: pd.DataFrame = None) -> pd.DataFrame:
@@ -176,4 +191,5 @@ class RecordLevelEmbedder:
         embeddings = self.transform(df)
         embed_cols = [f"embed_{i}" for i in range(embeddings.shape[1])]
         index = df.index if df is not None else self.df.index
+        print("[INFO] Embedding DataFrame ready.")
         return pd.DataFrame(embeddings, columns=embed_cols, index=index)
