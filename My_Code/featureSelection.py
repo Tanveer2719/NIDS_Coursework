@@ -149,8 +149,6 @@ class KBestFeatureSelector:
 
         return scores.mean()
 
-
-
 class AutoencoderFeatureSelector:
     def __init__(self, encoding_dim=40, classifier=None, epochs=100, batch_size=64, verbose=True):
         self.encoding_dim = encoding_dim
@@ -181,20 +179,18 @@ class AutoencoderFeatureSelector:
         return autoencoder, encoder
 
     def select_features(self, df, target_column):
-        X = df.drop(columns=[target_column]).values
-        y = df[target_column].values
-
-        input_dim = X.shape[1]
+        X_df = df.drop(columns=[target_column])
+        y = df[target_column]
 
         if self.verbose:
-            print("\n🧹 Preprocessing complete. Starting autoencoder training...")
+            print(f"\n🧹 Input features shape: {X_df.shape}, Target shape: {y.shape}")
+            print("🚫 Skipping normalization (already preprocessed)...")
 
-        # Normalize data
-        X = (X - X.mean(axis=0)) / (X.std(axis=0) + 1e-8)
+        X = X_df.values.astype(np.float32)
 
         X_train, X_val = train_test_split(X, test_size=0.2, random_state=42)
 
-        autoencoder, encoder = self._build_autoencoder(input_dim)
+        autoencoder, encoder = self._build_autoencoder(X.shape[1])
 
         early_stop = EarlyStopping(
             monitor='val_loss', patience=10, restore_best_weights=True, verbose=1
@@ -222,7 +218,7 @@ class AutoencoderFeatureSelector:
         selected_mask = np.array([True] * self.encoding_dim + [False] * (X.shape[1] - self.encoding_dim))
         selected_features = [f'encoded_{i}' for i in range(self.encoding_dim)]
 
-        return selected_mask[:X_encoded.shape[1]], selected_features, X_encoded, y
+        return selected_mask[:X_encoded.shape[1]], selected_features, X_encoded, y.values
 
     def evaluate_selected(self, X_encoded, y, verbose=True):
         if verbose:
@@ -236,4 +232,3 @@ class AutoencoderFeatureSelector:
             print(f"📈 Mean F1 Score: {scores.mean():.4f}")
 
         return scores.mean()
-
