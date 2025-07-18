@@ -101,29 +101,10 @@ class PSOFeatureSelector:
 
 class KBestFeatureSelector:
     def __init__(self, k=20, classifier=None):
-        """
-        Initialize the feature selector.
-
-        Parameters:
-        - k: Number of top features to select
-        - classifier: Estimator to evaluate selected features (default = RandomForestClassifier)
-        """
         self.k = k
         self.classifier = classifier or RandomForestClassifier(random_state=42)
 
     def select_features(self, df, target_column, verbose=False):
-        """
-        Select top k features using mutual information.
-
-        Parameters:
-        - df: Preprocessed DataFrame including features and target
-        - target_column: Name of the target column
-        - verbose: If True, print selection process details
-
-        Returns:
-        - selected_mask: Boolean mask of selected features
-        - selected_features: List of selected feature names
-        """
         X_df = df.drop(columns=[target_column])
         y = df[target_column]
 
@@ -139,37 +120,22 @@ class KBestFeatureSelector:
         if verbose:
             print(f"✅ Selected top {self.k} features out of {X_df.shape[1]}")
             print("📌 Selected features:")
-            for idx, feat in enumerate(selected_features, 1):
-                print(f"  {idx:2d}. {feat}")
+            for i, feat in enumerate(selected_features, 1):
+                print(f"  {i:2d}. {feat}")
 
         return selected_mask, selected_features
 
     def evaluate_selected(self, df, target_column, selected_mask, verbose=False):
-        """
-        Evaluate selected features using cross-validated F1 score.
-
-        Parameters:
-        - df: Original dataframe
-        - target_column: Column name of target
-        - selected_mask: Boolean mask of selected features
-        - verbose: If True, print evaluation info
-
-        Returns:
-        - mean_f1: Average macro F1 score
-        """
         X_df = df.drop(columns=[target_column])
         y = df[target_column]
         X_selected = X_df.iloc[:, selected_mask]
-
-        if verbose:
-            print("\n🧪 Evaluating selected features with cross-validated F1 score (macro)...")
 
         scorer = make_scorer(f1_score, average='macro')
         scores = cross_val_score(self.classifier, X_selected, y, cv=3, scoring=scorer, n_jobs=1)
 
         if verbose:
+            print("\n🧪 Evaluating selected features with cross-validated F1 score (macro)...")
             print(f"📊 F1 scores from each fold: {np.round(scores, 4).tolist()}")
             print(f"📈 Mean F1 Score: {scores.mean():.4f}")
 
         return scores.mean()
-
