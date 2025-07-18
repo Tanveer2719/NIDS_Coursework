@@ -156,6 +156,8 @@ class AutoencoderFeatureSelector:
         self.epochs = epochs
         self.batch_size = batch_size
         self.verbose = verbose
+        self.encoder = None
+        self.feature_ranks = None
 
     def _build_autoencoder(self, input_dim):
         if self.verbose:
@@ -178,9 +180,24 @@ class AutoencoderFeatureSelector:
 
         return autoencoder, encoder
 
-    def select_features(self, df, target_column):
+    def _rank_original_features(self, encoder, feature_names):
+        # Get weights from input -> first hidden layer
+        first_layer_weights = encoder.layers[1].get_weights()[0]  # Shape: (num_features, 128)
+        importances = np.linalg.norm(first_layer_weights, axis=1)  # L2 norm per feature
+
+        ranked = sorted(zip(feature_names, importances), key=lambda x: -x[1])
+
+        if self.verbose:
+            print("\n📊 Feature importances from encoder (top 10):")
+            for i, (name, score) in enumerate(ranked[:10]):
+                print(f"  {i+1}. {name}: {score:.4f}")
+
+        return ranked
+
+    def select_features(self, df, target_column, top_k_features=None):
         X_df = df.drop(columns=[target_column])
         y = df[target_column]
+        feature_names = X_df.columns.tolist()
 
         if self.verbose:
             print(f"\n🧹 Input features shape: {X_df.shape}, Target shape: {y.shape}")
@@ -191,6 +208,7 @@ class AutoencoderFeatureSelector:
         X_train, X_val = train_test_split(X, test_size=0.2, random_state=42)
 
         autoencoder, encoder = self._build_autoencoder(X.shape[1])
+        self.encoder = encoder
 
         early_stop = EarlyStopping(
             monitor='val_loss', patience=10, restore_best_weights=True, verbose=1
@@ -209,23 +227,30 @@ class AutoencoderFeatureSelector:
         if self.verbose:
             print("\n✅ Autoencoder training complete. Encoding data...")
 
+        # Get encoded data
         X_encoded = encoder.predict(X, verbose=self.verbose)
 
-        if self.verbose:
-            print(f"🔐 Encoded features shape: {X_encoded.shape}")
-            print(f"📌 Using top {self.encoding_dim} encoded features for downstream tasks.")
+        # Get feature importance ranking
+        ranked_features = self._rank_original_features(encoder, feature_names)
+        self.feature_ranks = ranked_features
 
-        selected_mask = np.array([True] * self.encoding_dim + [False] * (X.shape[1] - self.encoding_dim))
-        selected_features = [f'encoded_{i}' for i in range(self.encoding_dim)]
+        if top_k_features is not None:
+            top_features = [name for name, _ in ranked_features[:top_k_features]]
+            X_top = X_df[top_features].values
+            if self.verbose:
+                print(f"\n✅ Selected Top-{top_k_features} original features based on encoder importances.")
+            return top_features, X_top, y.values
 
-        return selected_mask[:X_encoded.shape[1]], selected_features, X_encoded, y.values
+        # Return the full embedding if top_k not requested
+        encoded_feature_names = [f'encoded_{i}' for i in range(X_encoded.shape[1])]
+        return encoded_feature_names, X_encoded, y.values
 
-    def evaluate_selected(self, X_encoded, y, verbose=True):
+    def evaluate_selected(self, X, y, verbose=True):
         if verbose:
-            print("\n🧪 Evaluating encoded features with cross-validated F1 score (macro)...")
+            print("\n🧪 Evaluating selected features with cross-validated F1 score (macro)...")
 
         scorer = make_scorer(f1_score, average='macro')
-        scores = cross_val_score(self.classifier, X_encoded, y, cv=3, scoring=scorer, n_jobs=-1)
+        scores = cross_val_score(self.classifier, X, y, cv=3, scoring=scorer, n_jobs=-1)
 
         if verbose:
             print(f"📊 F1 scores from each fold: {np.round(scores, 4).tolist()}")
