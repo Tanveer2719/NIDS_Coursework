@@ -4,7 +4,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import cross_val_score
 from sklearn.metrics import make_scorer, f1_score
 from sklearn.model_selection import train_test_split, cross_val_score
-import pandas as pd
+from boruta import BorutaPy
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, Dense
 from tensorflow.keras.callbacks import EarlyStopping
@@ -244,6 +244,66 @@ class AutoencoderFeatureSelector:
         # Return the full embedding if top_k not requested
         encoded_feature_names = [f'encoded_{i}' for i in range(X_encoded.shape[1])]
         return encoded_feature_names, X_encoded, y.values
+
+    def evaluate_selected(self, X, y, verbose=True):
+        if verbose:
+            print("\n🧪 Evaluating selected features with cross-validated F1 score (macro)...")
+
+        scorer = make_scorer(f1_score, average='macro')
+        scores = cross_val_score(self.classifier, X, y, cv=3, scoring=scorer, n_jobs=-1)
+
+        if verbose:
+            print(f"📊 F1 scores from each fold: {np.round(scores, 4).tolist()}")
+            print(f"📈 Mean F1 Score: {scores.mean():.4f}")
+
+        return scores.mean()
+
+class BorutaFeatureSelector:
+    def __init__(self, max_iter=100, classifier=None, verbose=True):
+        self.max_iter = max_iter
+        self.classifier = classifier or RandomForestClassifier(n_jobs=-1, class_weight='balanced', max_depth=5, random_state=42)
+        self.verbose = verbose
+        self.selected_features_ = None
+
+    def select_features(self, df, target_column, top_k_features=None):
+        X_df = df.drop(columns=[target_column])
+        y = df[target_column]
+        feature_names = X_df.columns.tolist()
+
+        if self.verbose:
+            print(f"\n🧹 Input features shape: {X_df.shape}, Target shape: {y.shape}")
+            print("🚫 Skipping normalization (already preprocessed)...")
+
+        X = X_df.values
+        y = y.values
+
+        rf = self.classifier
+        feat_selector = BorutaPy(rf, n_estimators='auto', verbose=2 if self.verbose else 0, random_state=42, max_iter=self.max_iter)
+
+        if self.verbose:
+            print("\n🚀 Starting Boruta feature selection...")
+
+        feat_selector.fit(X, y)
+
+        support = feat_selector.support_
+        ranking = feat_selector.ranking_
+
+        selected_features = [feature for feature, keep in zip(feature_names, support) if keep]
+        ranked_features = sorted(zip(feature_names, ranking), key=lambda x: x[1])
+
+        if self.verbose:
+            print("\n✅ Boruta selection complete.")
+            print("\n📊 Top 10 features (lowest rank):")
+            for i, (name, rank) in enumerate(ranked_features[:10]):
+                print(f"  {i+1}. {name}: Rank {rank}")
+
+        self.selected_features_ = selected_features
+
+        if top_k_features is not None:
+            selected_features = selected_features[:top_k_features]
+
+        X_top = X_df[selected_features].values
+        return selected_features, X_top, y
 
     def evaluate_selected(self, X, y, verbose=True):
         if verbose:
