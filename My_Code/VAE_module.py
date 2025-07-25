@@ -1,25 +1,33 @@
 import tensorflow as tf
 from tensorflow.keras import layers, Model
 
+class Sampling(layers.Layer):
+    def call(self, inputs):
+        z_mean, z_log_var = inputs
+        epsilon = tf.random.normal(shape=tf.shape(z_mean))
+        return z_mean + tf.exp(0.5 * z_log_var) * epsilon
+
 class VAE(Model):
-    def __init__(self, input_dim, latent_dim=32):
+    def __init__(self, input_dim, latent_dim):
         super(VAE, self).__init__()
         self.latent_dim = latent_dim
-        
-        # Encoder network
+
+        # Encoder: accepts 3D input (batch_size, 1, input_dim)
         self.encoder = tf.keras.Sequential([
-            layers.InputLayer(input_shape=(input_dim,)),
-            layers.Dense(64, activation='relu'),
-            layers.Dense(32, activation='relu'),
-            layers.Dense(latent_dim * 2),  # outputs mean and log variance
+            layers.Input(shape=(1, input_dim)),
+            layers.Flatten(),
+            layers.Dense(128, activation='relu'),
+            layers.Dense(latent_dim * 2),
         ])
 
-        # Decoder network
+        self.sampling = Sampling()
+
+        # Decoder
         self.decoder = tf.keras.Sequential([
-            layers.InputLayer(input_shape=(latent_dim,)),
-            layers.Dense(32, activation='relu'),
-            layers.Dense(64, activation='relu'),
-            layers.Dense(input_dim, activation='sigmoid'),  # sigmoid for binary data
+            layers.Input(shape=(latent_dim,)),
+            layers.Dense(128, activation='relu'),
+            layers.Dense(input_dim),
+            layers.Reshape((1, input_dim))
         ])
 
     def encode(self, x):
@@ -28,35 +36,17 @@ class VAE(Model):
         return z_mean, z_log_var
 
     def reparameterize(self, z_mean, z_log_var):
-        eps = tf.random.normal(shape=tf.shape(z_mean))
-        return eps * tf.exp(z_log_var * 0.5) + z_mean
+        return self.sampling((z_mean, z_log_var))
 
     def decode(self, z):
         return self.decoder(z)
-
-    def call(self, x):
-        z_mean, z_log_var = self.encode(x)
-        z = self.reparameterize(z_mean, z_log_var)
-        x_recon = self.decode(z)
-        return x_recon
 
     def compute_loss(self, x):
         z_mean, z_log_var = self.encode(x)
         z = self.reparameterize(z_mean, z_log_var)
         x_recon = self.decode(z)
-
-        # Binary crossentropy reconstruction loss summed over features
-        recon_loss = tf.reduce_mean(
-            tf.reduce_sum(
-                tf.keras.losses.binary_crossentropy(x, x_recon), axis=1
-            )
-        )
-
-        # KL divergence
-        kl_loss = -0.5 * tf.reduce_mean(
-            tf.reduce_sum(1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var), axis=1)
-        )
-
+        recon_loss = tf.reduce_mean(tf.reduce_sum(tf.keras.losses.binary_crossentropy(x, x_recon), axis=[1, 2]))
+        kl_loss = -0.5 * tf.reduce_mean(tf.reduce_sum(1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var), axis=1))
         total_loss = recon_loss + kl_loss
         return total_loss, recon_loss, kl_loss
 
@@ -66,23 +56,9 @@ class VAE(Model):
             total_loss, recon_loss, kl_loss = self.compute_loss(x)
         grads = tape.gradient(total_loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
-
-        self.compiled_metrics.update_state(x, self.call(x))
-
-        return {
-            "loss": total_loss,
-            "recon_loss": recon_loss,
-            "kl_loss": kl_loss,
-        }
+        return {"loss": total_loss, "recon_loss": recon_loss, "kl_loss": kl_loss}
 
     def test_step(self, data):
         x = tf.cast(data, tf.float32)
         total_loss, recon_loss, kl_loss = self.compute_loss(x)
-
-        self.compiled_metrics.update_state(x, self.call(x))
-
-        return {
-            "loss": total_loss,
-            "recon_loss": recon_loss,
-            "kl_loss": kl_loss,
-        }
+        return {"loss": total_loss, "recon_loss": recon_loss, "kl_loss": kl_loss}
