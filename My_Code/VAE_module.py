@@ -51,7 +51,8 @@ class VAE(Model):
         return total_loss, recon_loss, kl_loss
 
     def train_step(self, data):
-        x = tf.cast(data, tf.float32)
+        x, y = data  # unpack inputs and targets
+        x = tf.cast(x, tf.float32)
         with tf.GradientTape() as tape:
             total_loss, recon_loss, kl_loss = self.compute_loss(x)
         grads = tape.gradient(total_loss, self.trainable_variables)
@@ -59,6 +60,8 @@ class VAE(Model):
         return {"loss": total_loss, "recon_loss": recon_loss, "kl_loss": kl_loss}
 
     def test_step(self, data):
-        x = tf.cast(data, tf.float32)
+        x, y = data
+        x = tf.cast(x, tf.float32)
         total_loss, recon_loss, kl_loss = self.compute_loss(x)
         return {"loss": total_loss, "recon_loss": recon_loss, "kl_loss": kl_loss}
+
