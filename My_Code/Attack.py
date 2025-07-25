@@ -44,7 +44,6 @@ def evaluate_metrics(y_true, y_pred):
 # ========================
 # 🚀 FGSM Attack Class
 # ========================
-
 class FGSM:
 
     def __init__(self, model):
@@ -54,12 +53,15 @@ class FGSM:
         x_tf = tf.convert_to_tensor(x_df, dtype=tf.float32)
         y_tf = tf.convert_to_tensor(y_df, dtype=tf.float32)
 
+        # Generate adversarial examples
         x_adv = fgsm_attack_tf(self.model, x_tf, y_tf, epsilon=epsilon)
 
+        # Predictions on clean and adversarial inputs
         y_pred_clean = (self.model.predict(x_tf) > 0.5).astype(int).flatten()
         y_pred_adv = (self.model.predict(x_adv) > 0.5).astype(int).flatten()
         y_true = y_df.flatten()
 
+        # Evaluate metrics
         clean_metrics = evaluate_metrics(y_true, y_pred_clean)
         adv_metrics = evaluate_metrics(y_true, y_pred_adv)
 
@@ -70,15 +72,29 @@ class FGSM:
         }
 
     def perform_fgsm_batch(self, x_df, y_df, epsilon_list):
+        """
+        Runs FGSM attack over multiple epsilons, returns detailed metrics per epsilon.
+        """
+
         x_tf = tf.convert_to_tensor(x_df, dtype=tf.float32)
         y_tf = tf.convert_to_tensor(y_df, dtype=tf.float32)
 
-        f1_scores = []
+        results = []
 
         for eps in epsilon_list:
             x_adv = fgsm_attack_tf(self.model, x_tf, y_tf, epsilon=eps)
-            y_pred_adv = (self.model.predict(x_adv) > 0.5).astype(int).flatten()
-            f1 = f1_score(y_df, y_pred_adv)
-            f1_scores.append((eps, f1))
 
-        return f1_scores
+            y_pred_clean = (self.model.predict(x_tf) > 0.5).astype(int).flatten()
+            y_pred_adv = (self.model.predict(x_adv) > 0.5).astype(int).flatten()
+            y_true = y_df.flatten()
+
+            clean_metrics = evaluate_metrics(y_true, y_pred_clean)
+            adv_metrics = evaluate_metrics(y_true, y_pred_adv)
+
+            results.append({
+                'epsilon': eps,
+                'clean': clean_metrics,
+                'adversarial': adv_metrics
+            })
+
+        return results
