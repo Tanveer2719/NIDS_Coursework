@@ -1,18 +1,24 @@
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras import layers, Model
-from sklearn.metrics import mean_squared_error
+from tensorflow.keras import layers
+from tensorflow.keras.models import Model
+from sklearn.model_selection import train_test_split
 
-class VAE(Model):
-    def __init__(self, input_dim, latent_dim=16):
-        super(VAE, self).__init__()
+
+class VAE(tf.keras.Model):
+    def __init__(self, input_dim, latent_dim=16, **kwargs):
+        super(VAE, self).__init__(**kwargs)
+        self.latent_dim = latent_dim
+
+        # Encoder
         self.encoder = tf.keras.Sequential([
             layers.Input(shape=(input_dim,)),
             layers.Dense(64, activation='relu'),
             layers.Dense(32, activation='relu'),
-            layers.Dense(latent_dim + latent_dim)  # mean and log variance
+            layers.Dense(latent_dim * 2)  # mean and log var
         ])
 
+        # Decoder
         self.decoder = tf.keras.Sequential([
             layers.Input(shape=(latent_dim,)),
             layers.Dense(32, activation='relu'),
@@ -20,10 +26,10 @@ class VAE(Model):
             layers.Dense(input_dim, activation='sigmoid')
         ])
 
-    def sample(self, eps=None):
-        if eps is None:
-            eps = tf.random.normal(shape=(100, self.latent_dim))
-        return self.decode(eps, apply_sigmoid=True)
+        # Track losses for logging
+        self.total_loss_tracker = tf.keras.metrics.Mean(name="total_loss")
+        self.recon_loss_tracker = tf.keras.metrics.Mean(name="recon_loss")
+        self.kl_loss_tracker = tf.keras.metrics.Mean(name="kl_loss")
 
     def encode(self, x):
         z = self.encoder(x)
@@ -31,54 +37,53 @@ class VAE(Model):
         return z_mean, z_log_var
 
     def reparameterize(self, z_mean, z_log_var):
-        eps = tf.random.normal(shape=z_mean.shape)
+        eps = tf.random.normal(shape=tf.shape(z_mean))
         return eps * tf.exp(z_log_var * 0.5) + z_mean
 
     def decode(self, z):
         return self.decoder(z)
 
-    def call(self, x):
+    def call(self, inputs):
+        z_mean, z_log_var = self.encode(inputs)
+        z = self.reparameterize(z_mean, z_log_var)
+        return self.decode(z)
+
+    def train_step(self, data):
+        x = tf.cast(data, tf.float32)
+        with tf.GradientTape() as tape:
+            z_mean, z_log_var = self.encode(x)
+            z = self.reparameterize(z_mean, z_log_var)
+            x_recon = self.decode(z)
+
+            recon_loss = tf.reduce_mean(tf.keras.losses.mse(x, x_recon))
+            kl_loss = -0.5 * tf.reduce_mean(1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var))
+            total_loss = recon_loss + kl_loss
+
+        grads = tape.gradient(total_loss, self.trainable_variables)
+        self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
+
+        self.total_loss_tracker.update_state(total_loss)
+        self.recon_loss_tracker.update_state(recon_loss)
+        self.kl_loss_tracker.update_state(kl_loss)
+
+        return {
+            "loss": self.total_loss_tracker.result(),
+            "recon_loss": self.recon_loss_tracker.result(),
+            "kl_loss": self.kl_loss_tracker.result(),
+        }
+
+    def test_step(self, data):
+        x = tf.cast(data, tf.float32)
         z_mean, z_log_var = self.encode(x)
         z = self.reparameterize(z_mean, z_log_var)
         x_recon = self.decode(z)
-        return x_recon
 
-class VAEWrapper:
-    def __init__(self, input_dim, latent_dim=16):
-        self.vae = VAE(input_dim, latent_dim)
-        self.optimizer = tf.keras.optimizers.Adam()
-        self.loss_fn = tf.keras.losses.MeanSquaredError()
-
-    def compute_loss(self, x):
-        z_mean, z_log_var = self.vae.encode(x)
-        z = self.vae.reparameterize(z_mean, z_log_var)
-        x_recon = self.vae.decode(z)
-
-        recon_loss = tf.reduce_mean(self.loss_fn(x, x_recon))
+        recon_loss = tf.reduce_mean(tf.keras.losses.mse(x, x_recon))
         kl_loss = -0.5 * tf.reduce_mean(1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var))
         total_loss = recon_loss + kl_loss
-        return total_loss
 
-    def train(self, x_train, y_train, x_val, y_val, epochs=20, batch_size=128):
-        x_train = x_train.reshape((x_train.shape[0], -1))
-        x_val = x_val.reshape((x_val.shape[0], -1))
-        train_dataset = tf.data.Dataset.from_tensor_slices(x_train).shuffle(1024).batch(batch_size)
-
-        for epoch in range(epochs):
-            epoch_loss = 0
-            for step, batch_x in enumerate(train_dataset):
-                with tf.GradientTape() as tape:
-                    loss = self.compute_loss(batch_x)
-                grads = tape.gradient(loss, self.vae.trainable_variables)
-                self.optimizer.apply_gradients(zip(grads, self.vae.trainable_variables))
-                epoch_loss += loss.numpy()
-
-            val_recon = self.vae(x_val)
-            val_loss = mean_squared_error(x_val, val_recon)
-            print(f"Epoch {epoch+1}/{epochs}, Train Loss: {epoch_loss:.4f}, Val Recon MSE: {val_loss:.4f}")
-
-    def predict(self, x_test, y_test):
-        x_test = x_test.reshape((x_test.shape[0], -1))
-        x_recon = self.vae(x_test)
-        x_recon = tf.clip_by_value(x_recon, 0.0, 1.0)
-        return x_recon.numpy(), y_test
+        return {
+            "loss": total_loss,
+            "recon_loss": recon_loss,
+            "kl_loss": kl_loss,
+        }
