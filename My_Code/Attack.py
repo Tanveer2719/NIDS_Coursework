@@ -89,9 +89,7 @@ def evaluate_metrics(y_true, y_pred):
         'far': far
     }
 
-# ========================
-# FGSM Attack Class
-# ========================
+
 class FGSM:
 
     def __init__(self, model):
@@ -142,7 +140,11 @@ class FGSM:
             })
 
         return results
-    
+
+
+# ========================
+# PGD Attack Class
+# ========================   
 class PGD:
     def __init__(self, model, clip_min=0.0, clip_max=1.0, alpha_ratio=0.2):
         self.model = model
