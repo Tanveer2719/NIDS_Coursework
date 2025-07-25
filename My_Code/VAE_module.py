@@ -2,7 +2,6 @@ import tensorflow as tf
 from tensorflow.keras import layers, Model
 
 class Sampling(layers.Layer):
-    """Uses (z_mean, z_log_var) to sample z"""
     def call(self, inputs):
         z_mean, z_log_var = inputs
         epsilon = tf.random.normal(shape=tf.shape(z_mean))
@@ -13,47 +12,36 @@ class VAE(Model):
         super(VAE, self).__init__()
         self.latent_dim = latent_dim
 
-        # Encoder network
+        # Encoder
         self.encoder = tf.keras.Sequential([
             layers.InputLayer(input_shape=(1, input_dim)),
             layers.Flatten(),
             layers.Dense(128, activation='relu'),
-            layers.Dense(latent_dim * 2)  # Output both mean and log variance
+            layers.Dense(latent_dim * 2)
         ])
 
         self.sampling = Sampling()
 
-        # Decoder network
+        # Decoder
         self.decoder = tf.keras.Sequential([
             layers.InputLayer(input_shape=(latent_dim,)),
             layers.Dense(128, activation='relu'),
             layers.Dense(input_dim, activation='sigmoid'),
-            layers.Reshape((1, input_dim))  # Match input shape
+            layers.Reshape((1, input_dim))
         ])
 
     def encode(self, x):
-        """Encode input into mean and log variance"""
-        z_params = self.encoder(x)
-        z_mean, z_log_var = tf.split(z_params, num_or_size_splits=2, axis=1)
+        z = self.encoder(x)
+        z_mean, z_log_var = tf.split(z, num_or_size_splits=2, axis=1)
         return z_mean, z_log_var
 
     def reparameterize(self, z_mean, z_log_var):
-        """Apply reparameterization trick"""
         return self.sampling((z_mean, z_log_var))
 
     def decode(self, z):
-        """Reconstruct input from latent space"""
         return self.decoder(z)
 
-    def call(self, inputs):
-        """VAE forward pass"""
-        z_mean, z_log_var = self.encode(inputs)
-        z = self.reparameterize(z_mean, z_log_var)
-        reconstructed = self.decode(z)
-        return reconstructed
-
     def compute_loss(self, x):
-        """Calculate VAE loss (reconstruction + KL divergence)"""
         z_mean, z_log_var = self.encode(x)
         z = self.reparameterize(z_mean, z_log_var)
         x_recon = self.decode(z)
@@ -62,15 +50,11 @@ class VAE(Model):
         x_flat = tf.reshape(x, [-1, tf.shape(x)[-1]])  # (batch*1, 64)
         x_recon_flat = tf.reshape(x_recon, [-1, tf.shape(x_recon)[-1]])
         
-        # Reconstruction loss (binary cross-entropy)
-        recon_loss = tf.reduce_mean(
-            tf.reduce_sum(
-                tf.keras.losses.binary_crossentropy(x_flat, x_recon_flat),
-                axis=1
-            )
-        )
+        # Calculate BCE loss per sample (already reduced across features)
+        bce_loss = tf.keras.losses.binary_crossentropy(x_flat, x_recon_flat)
+        recon_loss = tf.reduce_mean(bce_loss)  # Mean over batch
         
-        # KL divergence loss
+        # KL divergence
         kl_loss = -0.5 * tf.reduce_mean(
             tf.reduce_sum(
                 1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var),
@@ -82,8 +66,7 @@ class VAE(Model):
         return total_loss, recon_loss, kl_loss
 
     def train_step(self, data):
-        """Training step override"""
-        x, _ = data  # We don't need labels for VAE
+        x, _ = data
         with tf.GradientTape() as tape:
             total_loss, recon_loss, kl_loss = self.compute_loss(x)
         grads = tape.gradient(total_loss, self.trainable_variables)
@@ -95,7 +78,6 @@ class VAE(Model):
         }
 
     def test_step(self, data):
-        """Test step override"""
         x, _ = data
         total_loss, recon_loss, kl_loss = self.compute_loss(x)
         return {
