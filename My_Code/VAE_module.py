@@ -26,7 +26,7 @@ class VAE(Model):
         self.decoder = tf.keras.Sequential([
             layers.Input(shape=(latent_dim,)),
             layers.Dense(128, activation='relu'),
-            layers.Dense(input_dim),
+            layers.Dense(input_dim, activation='sigmoid'),  # <-- important fix
             layers.Reshape((1, input_dim))
         ])
 
