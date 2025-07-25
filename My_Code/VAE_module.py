@@ -76,11 +76,17 @@ class VAE(Model):
         kl_loss = -0.5 * tf.reduce_mean(1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var))
         total_loss = recon_loss + kl_loss
 
+        # Update metrics to track validation losses
+        self.total_loss_tracker.update_state(total_loss)
+        self.reconstruction_loss_tracker.update_state(recon_loss)
+        self.kl_loss_tracker.update_state(kl_loss)
+
         return {
-            "loss": total_loss,
-            "recon_loss": recon_loss,
-            "kl_loss": kl_loss
+            "loss": self.total_loss_tracker.result(),
+            "recon_loss": self.reconstruction_loss_tracker.result(),
+            "kl_loss": self.kl_loss_tracker.result()
         }
+
 
     @property
     def metrics(self):
