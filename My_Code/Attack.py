@@ -56,6 +56,21 @@ def fgsm_attack_tf(model, inputs, labels, epsilon=0.05, verbose=True):
 
     return adv_inputs
 
+def pgd_attack_tf(model, x, y, epsilon=0.05, alpha=0.01, num_iter=10, clip_min=0.0, clip_max=1.0):
+    x_adv = tf.identity(x)
+    y = tf.expand_dims(tf.cast(y, tf.float32), axis=-1)
+
+    for _ in range(num_iter):
+        with tf.GradientTape() as tape:
+            tape.watch(x_adv)
+            pred = model(x_adv, training=False)
+            loss = tf.keras.losses.binary_crossentropy(y, pred)
+        grad = tape.gradient(loss, x_adv)
+        x_adv = x_adv + alpha * tf.sign(grad)
+        x_adv = tf.clip_by_value(x_adv, x - epsilon, x + epsilon)
+        x_adv = tf.clip_by_value(x_adv, clip_min, clip_max)
+
+    return x_adv
 
 
 def evaluate_metrics(y_true, y_pred):
@@ -106,10 +121,6 @@ class FGSM:
         }
 
     def perform_fgsm_batch(self, x_df, y_df, epsilon_list,verbose=True):
-        """
-        Runs FGSM attack over multiple epsilons, returns detailed metrics per epsilon.
-        """
-
         x_tf = tf.convert_to_tensor(x_df, dtype=tf.float32)
         y_tf = tf.convert_to_tensor(y_df, dtype=tf.float32)
 
@@ -120,7 +131,6 @@ class FGSM:
 
             x_adv = fgsm_attack_tf(self.model, x_tf, y_tf, epsilon=eps,verbose=verbose)
 
-            # y_pred_clean = (self.model.predict(x_tf) > 0.5).astype(int).flatten()
             y_pred_adv = (self.model.predict(x_adv) > 0.5).astype(int).flatten()
             y_true = y_tf.numpy()
 
@@ -132,3 +142,69 @@ class FGSM:
             })
 
         return results
+    
+class PGD:
+    def __init__(self, model, clip_min=0.0, clip_max=1.0, alpha_ratio=0.2):
+        self.model = model
+        self.clip_min = clip_min
+        self.clip_max = clip_max
+        self.alpha_ratio = alpha_ratio
+
+    def perform_pgd(self, x_df, y_df, epsilon=0.05, alpha=None, num_iter=10):
+        x_tf = tf.convert_to_tensor(x_df, dtype=tf.float32)
+        y_tf = tf.convert_to_tensor(y_df, dtype=tf.float32)
+
+        if alpha is None:
+            alpha = epsilon * self.alpha_ratio
+
+        x_adv = pgd_attack_tf(self.model, x_tf, y_tf,
+                              epsilon=epsilon, alpha=alpha, num_iter=num_iter,
+                              clip_min=self.clip_min, clip_max=self.clip_max)
+
+        y_pred_clean = (self.model.predict(x_tf) > 0.5).astype(int).flatten()
+        y_pred_adv = (self.model.predict(x_adv) > 0.5).astype(int).flatten()
+        y_true = y_tf.numpy()
+
+        clean_metrics = evaluate_metrics(y_true, y_pred_clean)
+        adv_metrics = evaluate_metrics(y_true, y_pred_adv)
+
+        return {
+            'epsilon': epsilon,
+            'clean': clean_metrics,
+            'adversarial': adv_metrics
+        }
+
+    def perform_pgd_batch(self, x_df, y_df, epsilon_list, alpha_ratio=0.2, num_iter=10, verbose=True):
+        x_tf = tf.convert_to_tensor(x_df, dtype=tf.float32)
+        y_tf = tf.convert_to_tensor(y_df, dtype=tf.float32)
+
+        results = []
+
+        for eps in epsilon_list:
+            if verbose:
+                print(f"\n🔁 Epsilon = {eps}")
+
+            alpha = eps * alpha_ratio
+
+            x_adv = pgd_attack_tf(
+                self.model, x_tf, y_tf,
+                epsilon=eps,
+                alpha=alpha,
+                num_iter=num_iter,
+                clip_min=self.clip_min,
+                clip_max=self.clip_max
+            )
+
+            y_pred_adv = (self.model.predict(x_adv) > 0.5).astype(int).flatten()
+            y_true = y_tf.numpy()
+
+            adv_metrics = evaluate_metrics(y_true, y_pred_adv)
+
+            results.append({
+                'epsilon': eps,
+                'adversarial': adv_metrics
+            })
+
+        return results
+
+
