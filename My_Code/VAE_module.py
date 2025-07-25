@@ -40,31 +40,28 @@ class VAE(Model):
 
     def decode(self, z):
         return self.decoder(z)
-
+    
     def compute_loss(self, x):
         z_mean, z_log_var = self.encode(x)
         z = self.reparameterize(z_mean, z_log_var)
         x_recon = self.decode(z)
-        
+
         # Flatten both input and reconstruction
-        x_flat = tf.reshape(x, [-1, tf.shape(x)[-1]])  # (batch*1, 64)
+        x_flat = tf.reshape(x, [-1, tf.shape(x)[-1]])  # shape: (batch_size, input_dim)
         x_recon_flat = tf.reshape(x_recon, [-1, tf.shape(x_recon)[-1]])
-        
-        # Calculate BCE loss per sample (already reduced across features)
+
+        # Compute BCE loss per sample (sum across features)
         bce_loss = tf.keras.losses.binary_crossentropy(x_flat, x_recon_flat)
-        recon_loss = tf.reduce_mean(bce_loss)  # Mean over batch
-        
-        # KL divergence
+        recon_loss = tf.reduce_mean(tf.reduce_sum(bce_loss, axis=1))  # sum over features, mean over batch
+
+        # KL Divergence
         kl_loss = -0.5 * tf.reduce_mean(
-            tf.reduce_sum(
-                1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var),
-                axis=1
-            )
+            tf.reduce_sum(1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var), axis=1)
         )
-        
+
         total_loss = recon_loss + kl_loss
         return total_loss, recon_loss, kl_loss
-
+    
     def train_step(self, data):
         x, _ = data
         with tf.GradientTape() as tape:
